@@ -1,0 +1,3 @@
+*.raku    text diff=perl6
+*.rakumod text diff=perl6
+*.t       text diff=perl6
