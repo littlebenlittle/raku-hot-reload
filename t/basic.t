@@ -18,36 +18,32 @@ my $tmpdir = $*TMPDIR.add("hot-reload-test-$uid");
 mkdir $tmpdir;
 END { run « rm -r $tmpdir »  if $tmpdir.defined }
 
-my $pass = False;
-my $watch = Watch.new: $tmpdir, {
-	$pass = True
-};
+my $watch = Watch.new: $tmpdir;
+
+$watch.on-create = -> $path, $basename { say "created  {$path.IO.add: $basename}" };
+$watch.on-delete = -> $path, $basename { say "deleted  {$path.IO.add: $basename}" };
+$watch.on-modify = -> $path, $basename { say "modified {$path.IO.add: $basename}" };
 
 react {
-	#|( Create two files: Wait until the first is detected
-	    by inotifywait before creating the second
-	)
 	once whenever $watch.ready {
 		my $file = $tmpdir.add: 'test.file';
-		whenever (Proc::Async.new: « touch $file »).start {
+		once whenever Proc::Async.new(« touch $file »).start {
 			once whenever $watch.ready {
 				$file = $tmpdir.add: 'other.file';
-				whenever (Proc::Async.new: « touch $file »).start {
-					$watch.stop;
+				once whenever Proc::Async.new(« touch $file »).start {
+					once whenever $watch.ready {
+						once whenever Proc::Async.new(« rm $file »).start {
+							$watch.stop;
+						}
+					}
 				}
 			}
 		}
 	}
 	whenever $watch.start {
-		say 'watch exited: ' ~ (.success ?? 'SUCCESS' !! 'FAILURE');
+		say 'watch exited';
 		done;
 	}
-}
-
-if $pass {
-	say 'pass!'
-} else {
-	say 'fail!'
 }
 
 done-testing;
