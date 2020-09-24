@@ -18,22 +18,36 @@ my $tmpdir = $*TMPDIR.add("hot-reload-test-$uid");
 mkdir $tmpdir;
 END { run « rm -r $tmpdir »  if $tmpdir.defined }
 
-my $watch = Watch.new: $tmpdir, { say 'callback!' };
-my $file = $tmpdir.add: 'test.file';
-my $filewriter = Proc::Async.new: « touch $file »;
+my $pass = False;
+my $watch = Watch.new: $tmpdir, {
+	$pass = True
+};
 
 react {
-	whenever $watch.ready {
-		say "writing file to $file";
-		whenever $filewriter.start {
-			say 'file written: ' ~ ((.exitcode == 0) ?? 'SUCCESS' !! 'FAILURE');
-			$watch.stop;
+	#|( Create two files: Wait until the first is detected
+	    by inotifywait before creating the second
+	)
+	once whenever $watch.ready {
+		my $file = $tmpdir.add: 'test.file';
+		whenever (Proc::Async.new: « touch $file »).start {
+			once whenever $watch.ready {
+				$file = $tmpdir.add: 'other.file';
+				whenever (Proc::Async.new: « touch $file »).start {
+					$watch.stop;
+				}
+			}
 		}
 	}
 	whenever $watch.start {
 		say 'watch exited: ' ~ (.success ?? 'SUCCESS' !! 'FAILURE');
 		done;
 	}
+}
+
+if $pass {
+	say 'pass!'
+} else {
+	say 'fail!'
 }
 
 done-testing;
