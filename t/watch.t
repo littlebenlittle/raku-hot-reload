@@ -29,7 +29,8 @@ react {
 				once whenever Proc::Async.new(« touch $file »).start {
 					once whenever $watch.ready {
 						once whenever Proc::Async.new(« rm $file »).start {
-							$watch.stop;
+							await $watch.stop;
+							say 'all done!';
 						}
 					}
 				}
