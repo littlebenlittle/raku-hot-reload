@@ -1,7 +1,7 @@
 use v6;
 
 use Test;
-use Watch:ver<0.0.0>:auth<github:littlebenlittle>;
+use Watch;
 
 class Unit {
 }
@@ -14,15 +14,11 @@ plan @units.elems;
 ok False, .name for @units;
 
 my $uid = sprintf '%d%d%d%d', (0..9).pick: 4;
-my $tmpdir = $*TMPDIR.add("hot-reload-test-$uid");
+my $tmpdir = $*TMPDIR.add("watch-test-$uid");
 mkdir $tmpdir;
 END { run « rm -r $tmpdir »  if $tmpdir.defined }
 
 my $watch = Watch.new: $tmpdir;
-
-$watch.on-create = -> $path, $basename { say "created  {$path.IO.add: $basename}" };
-$watch.on-delete = -> $path, $basename { say "deleted  {$path.IO.add: $basename}" };
-$watch.on-modify = -> $path, $basename { say "modified {$path.IO.add: $basename}" };
 
 react {
 	once whenever $watch.ready {
@@ -40,10 +36,10 @@ react {
 			}
 		}
 	}
-	whenever $watch.start {
-		say 'watch exited';
-		done;
-	}
+	whenever $watch.create { say "CREATE  {.path}" }
+	whenever $watch.modify { say "MODIFY  {.path}" }
+	whenever $watch.delete { say "DELETE  {.path}" }
+	whenever $watch.start  { done }
 }
 
 done-testing;

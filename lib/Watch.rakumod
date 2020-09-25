@@ -1,20 +1,21 @@
 
-unit class Watch:ver<0.0.0>:auth<github:littlebenlittle>;
+use Watcher;
 
-has $.dir;
+unit class Watch does Watcher;
+
 has $!procs = Supplier.new; #= supply for subprocesses spawned by this Watch
-has $.ready = Supplier.new; #= sends Any when Watche is established
-has $!done  = Supplier.new; #= send Any to stop this watch
-has $.finished  = Supplier.new;
-has &.on-create is rw;
-has &.on-modify is rw;
-has &.on-delete is rw;
 
 method new(IO() $dir) {
 	self.bless(:$dir);
 }
 
 submethod BUILD(:$!dir) {}
+
+class Event {
+	enum Type <CREATE MODIFY DELETE>;
+	has IO::Path $.path;
+	has Type     $.type;
+}
 
 method start {
 	return Promise.start: {
@@ -24,26 +25,27 @@ method start {
 			whenever $!procs.Supply -> Proc::Async:D $proc {
 				whenever $proc.stdout.lines {
 					if $_ ~~ /
-						$<path>=('/'+ %% [[<.alnum> | '-' | '_']+])
+						$<dir>=('/'+ %% [[<.alnum> | '-' | '_']+])
 						<.ws>
 						$<event>=('CREATE'|'MODIFY'|'DELETE')
 						<.ws>
 						$<basename>=<-[\v]>+
 					/ {
-						my &fn;
+						my $path = $/<dir>.IO.add: $/<basename>.Str;
+						my $type;
 						given $/<event>.Str {
-							when 'CREATE' { &fn = &.on-create }
-							when 'MODIFY' { &fn = &.on-modify }
-							when 'DELETE' { &fn = &.on-delete }
+							when 'CREATE' { $type = Event::Type::CREATE }
+							when 'MODIFY' { $type = Event::Type::MODIFY }
+							when 'DELETE' { $type = Event::Type::DELETE }
 						}
-						fn($/<path>.Str, $/<basename>.Str)
+						$!events.emit: Event.new: :$path, :$type;
 					} else {
 						# .say;
 					}
 				}
-				whenever $proc.stderr.lines.merge {
+				whenever $proc.stderr.lines {
 					if $_ ~~ / 'Watches established.' / {
-						$.ready.emit: Any;
+						$!ready.emit: Any;
 					} else {
 						# .note
 					}
@@ -54,10 +56,12 @@ method start {
 				}
 				once whenever signal(SIGTERM).merge: signal(SIGINT) {
 					$STOP = True;
+					note "watch cancelled by $_";
 					$proc.kill: $_;
 				}
 				once whenever $!done.Supply {
 					$STOP = True;
+					note 'watch cancelled';
 					$proc.kill: SIGTERM;
 				}
 			}
@@ -70,9 +74,12 @@ method start {
 method stop {
 	return Promise.start: {
 		react {
-			whenever $.finished.Supply { done }
+			whenever $.done { done }
 			$!done.emit: Any;
 		}
 	};
 }
 
+method create { $.events.grep: {.type == Event::Type::CREATE }}
+method modify { $.events.grep: {.type == Event::Type::MODIFY }}
+method delete { $.events.grep: {.type == Event::Type::DELETE }}
